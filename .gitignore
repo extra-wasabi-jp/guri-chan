@@ -1,3 +1,5 @@
 .venv/
 app/__pychache__/
 run.sh
+run-local.sh
+run-local-nodocker.sh

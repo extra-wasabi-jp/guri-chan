@@ -3,7 +3,10 @@
 https://qiita.com/kro/items/67f7510b36945eb9689b を参考に作成した<br/>
 Line Messaging API の Bot アプリです。<br/>
 
-Python + Flask で作りました。
+Webhook で何かしらメッセージが届くと、DynamoDB に保存された画像が送信者に返信されます。<br/>
+画像はS3(CloudFrontで公開) に保存された画像で、画像のURL は DynamoDB に保存された内容を取得しています
+
+Python + Flask + boto3 で作りました。
 実行環境として Docker Image のDockerfileもあります。
 
 ## 1. 準備
@@ -53,11 +56,21 @@ $ docker build -t guri-chan .
 ```
 
 ## 3. 実行
+※aws config のプロファイルを「guri-chan」で登録している場合、defaul の場合「--profile guri-chan」は省略する
 ```
-$ docker run --name guri-chan --rm \
+AWS_REGION="ap-northeast-1"
+AWS_ACCESS_KEY_ID=$(aws --profile guri-chan configure get aws_access_key_id)
+AWS_SECRET_ACCESS_KEY=$(aws --profile guri-chan configure get aws_secret_access_key)
+
+export AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+
+docker run --name guri-chan --rm \
 	-p 5001:5001 \
 	-e APP_PORT=5001 \
 	-e CHANNEL_ACCESS_TOKEN="Line Developper で発行した チャンネルアクセストークン" \
 	-e CHANNEL_SECRET="Line Developper で発行したシークレット" \
+	-e AWS_REGION=ap-northeast-1 \
+	-e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+	-e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
 	-d guri-chan:latest
 ```
