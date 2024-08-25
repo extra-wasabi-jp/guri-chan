@@ -1,0 +1,15 @@
+services:
+  guri-chan:
+    build: .
+    image: guri-chan:latest
+    container_name: guri-chan
+    ports:
+      - "5001:5001"
+    environment:
+      APP_PORT: 5001
+      CHANNEL_ACCESS_TOKEN: "${CHANNEL_ACCESS_TOKEN}"
+      CHANNEL_SECRET: "${CHANNEL_SECRET}"
+      AWS_REGION: "${AWS_REGION}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+

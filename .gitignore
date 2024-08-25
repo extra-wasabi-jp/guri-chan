@@ -1,4 +1,5 @@
 .venv/
+.env
 app/__pychache__/
 run.sh
 run-local.sh

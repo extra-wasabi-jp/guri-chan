@@ -49,6 +49,16 @@ https://developers.line.me/ja/services/messaging-api/
 
 ※詳細は割愛
 
+### 1-3. S3 Bucket と AccessKeyID, AccessSecretKey を取得する。
+
+* Bucket
+
+  * guri-chan
+
+* AccessKyID, AccessSecretKey は S3 guri-chan への権限を持った IAM にて作成する。
+
+  詳細は割愛
+
 
 ## 2. Dcoker image ビルド
 ```
@@ -56,6 +66,27 @@ $ docker build -t guri-chan .
 ```
 
 ## 3. 実行
+
+### 3-1. docker compose で動かす場合、
+
+#### Line チャンネルアクセストークン、シークレット、と AWS アクセスキーとシークレットを .env に設定する。
+
+```bash
+CHANNEL_ACCESS_TOKEN="@@@ Line Developper で発行した チャンネルアクセストークン @@@"
+CHANNEL_SECRET="@@@ Line Developper で発行したシークレット @@@"
+AWS_REGION="@@@ AWS のリージョン @@@"
+AWS_ACCESS_KEY_ID="@@@ AWS のアクセスキーＩＤ @@@"
+AWS_SECRET_ACCESS_KEY="@@@ AWS のシークレットキー @@@"
+```
+
+#### 実行
+
+```bash
+$ docker compose up -d
+```
+
+### 3-2. docker で動かす場合
+
 ※aws config のプロファイルを「guri-chan」で登録している場合、defaul の場合「--profile guri-chan」は省略する
 ```
 AWS_REGION="ap-northeast-1"
