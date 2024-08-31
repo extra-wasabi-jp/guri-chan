@@ -5,6 +5,8 @@ services:
     container_name: guri-chan
     ports:
       - "5001:5001"
+    volumes:
+      - "./app:/app"
     environment:
       APP_PORT: 5001
       CHANNEL_ACCESS_TOKEN: "${CHANNEL_ACCESS_TOKEN}"
