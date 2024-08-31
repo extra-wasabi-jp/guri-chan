@@ -105,3 +105,28 @@ docker run --name guri-chan --rm \
 	-e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
 	-d guri-chan:latest
 ```
+
+## 3. 付録（アップロード用shell）
+
+ぐりちゃんの写真は cron で定期的に撮影し、guri-chan.jpg という名前で Raspberry PI 3 に保存されている。
+
+保存されたファイルを API の upload エンドポイントに渡すことにより、S3 にアップロードしつつ、DynamoDB に最新情報を書き込むようになっている。
+
+upload.sh を動かすことにより、イメージファイルを base64 形式にエンコードして、API にリクエストを投げることができる。（API は curl コマンドで投げます）
+
+※shell　の中身
+
+```bash
+#!/bin/bash
+
+echo -n "{
+  \"encoded_image\": \"`base64 -w 0 -i guri-chan.jpg`\"
+}" > upload.json
+
+UPLOAD_SIGNATURE="@@@ アップロード用シグネチャ @@@"
+
+curl -X POST -H "Content-type: application/json" \
+        -H "X-Gurichan-Signature: ${UPLOAD_SIGNATURE}" \
+        -d '@upload.json' \
+        -v http://192.168.1.17:5001/api/gurichan/upload
+```

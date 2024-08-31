@@ -1,4 +1,5 @@
 jwcrypto
+jwt
 Flask
 line-bot-sdk
 boto3

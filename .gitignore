@@ -1,6 +1,9 @@
 .venv/
 .env
+.python-version
 app/__pychache__/
 run.sh
 run-local.sh
 run-local-nodocker.sh
+guri-chan.key
+guri-chan.key.pub

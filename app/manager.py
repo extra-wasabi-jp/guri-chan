@@ -1,7 +1,11 @@
 import os
+import uuid
+import json
+import base64
+from datetime import datetime
 import boto3
 
-from flask import Flask, request, abort
+from flask import Flask, request, abort, jsonify
 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -15,9 +19,30 @@ CHANNEL_SECRET = os.environ['CHANNEL_SECRET']
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-dynamodb = boto3.Session(region_name=os.environ['AWS_REGION']).resource('dynamodb')
-table = dynamodb.Table('APP_PROPS')
+endpointUrlS3 = os.getenv('S3_ENDPOINT_URL', default=None)
+endpointUrlDynamoDB = os.getenv('DYNAMO_DB_ENDPOINT_URL', default=None)
 
+# DyndamoDB クライアウト
+dynamodb = boto3.client(
+    'dynamodb',
+    region_name=os.environ['AWS_REGION'],
+    aws_access_key_id = os.getenv('AWS_ACCESS_KEY'),
+    aws_secret_access_key = os.getenv('AWS_SECRET_KEY'),
+    endpoint_url=endpointUrlDynamoDB
+)
+
+# S3 クライアント
+s3 = boto3.client(
+    's3',
+    region_name=os.environ['AWS_REGION'],
+    aws_access_key_id = os.getenv('AWS_ACCESS_KEY'),
+    aws_secret_access_key = os.getenv('AWS_SECRET_KEY'),
+    endpoint_url=endpointUrlS3
+)
+
+"""
+Line ステータス用エンドポイント
+"""
 @app.route('/api/gurichan/status', methods=['POST'])
 def status():
 
@@ -34,15 +59,18 @@ def status():
 
     return 'OK'
 
-
+"""
+Line API ハンドラ
+"""
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     # DynamoDB から最新のCDNに保存されたイメージURLを取得する。
-    response = table.get_item(
-        Key={
-            'app_name': 'guri-chan',
+    response = dynamodb.get_item({
+        'TableName': 'APP_PROPS',
+        'Key': {
+            'app_name': {'S': 'guri-chan'},
         },
-    )
+    })
     last_updated_at: string = response['Item']['props']['last_uploaded_at']
     latest_image_index_url: string = response['Item']['props']['latest_image_index_url']
     latest_image_url: string = response['Item']['props']['latest_image_url']
@@ -54,6 +82,81 @@ def handle_message(event):
             original_content_url=latest_image_url,
         )
     )
+
+
+"""
+ファイルアップロード
+"""
+@app.route('/api/gurichan/upload', methods=['POST'])
+def upload():
+
+    # シグネチャがヘッダーにセットされていてかつ正しい事
+    if 'X-Gurichan-Signature' not in request.headers:
+        return {
+            'status': 'NG',
+            'message': 'Header X-Gurichan-Signature is requred',
+        }, 403
+
+    signature = request.headers['X-Gurichan-Signature']
+    if signature != os.getenv('UPLOAD_SIGNATURE', None):
+        return {
+            'status': 'NG',
+            'message': 'invalid signature',
+        }, 403
+
+    body = request.data.decode('utf-8')
+    body = json.loads(body)
+
+    encodedImage = body['encoded_image']
+
+    img_bin = base64.b64decode(encodedImage)
+
+    now = datetime.now()
+    ymd = now.strftime('%Y%m%d')
+    filename = '{uuid}.jpg'.format(uuid=uuid.uuid4())
+    fullpath = 'images/{ymd}/{filename}'.format(ymd=ymd, filename=filename)
+
+    # S3 にファイルをアップロードする (s3://guri0-chan/images/yyyyMMdd/uuid.jpg)
+    response = s3.put_object(
+        Body=img_bin,
+        Bucket='guri-chan',
+        Key=fullpath,
+    )
+    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+        return jsonify({
+            'status': 'NG',
+            'message': 'S3へのアップロードでエラーが発生しました',
+        }), 500
+    
+    # DynamoDB のプロパティを更新する
+    cloudfront_url = os.getenv('CLOUDFRONT_URL', 'http://localhost/')
+    index_url = "{cloudfront_url}{fullpath}".format(cloudfront_url=cloudfront_url, fullpath=fullpath)
+    image_url = "{cloudfront_url}{fullpath}".format(cloudfront_url=cloudfront_url, fullpath=fullpath)
+    response = dynamodb.update_item(
+        TableName='APP_PROPS',
+        Key={
+            "app_name": {"S": "guri-chan"},
+        },
+        UpdateExpression="SET props.last_uploaded_at = :last_uploaded_at"\
+            " , props.latest_image_index_url = :index_url"\
+            " , props.latest_image_url = :image_url",
+        ExpressionAttributeValues={
+            ":last_uploaded_at": { "S": now.isoformat() },
+            ":index_url": { "S": index_url },
+            ":image_url": { "S": image_url },
+        },
+    )
+    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+        return jsonify({
+            'status': 'NG',
+            'message': 'DynamoDB の更新が失敗しました',
+        }), 500
+
+    return jsonify({
+        'status': 'OK',
+        'message': '画像はアップロードされました',
+        'url': image_url,
+    }), 200
 
 
 if __name__ == '__main__':

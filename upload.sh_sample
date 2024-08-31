@@ -1,0 +1,12 @@
+#!/bin/bash
+
+echo -n "{
+  \"encoded_image\": \"`base64 -w 0 -i guri-chan.jpg`\"
+}" > upload.json
+
+UPLOAD_SIGNATURE="@@@ アップロード用シグネチャ @@@"
+
+curl -X POST -H "Content-type: application/json" \
+        -H "X-Gurichan-Signature: ${UPLOAD_SIGNATURE}" \
+        -d '@upload.json' \
+        -v http://192.168.1.17:5001/api/gurichan/upload
