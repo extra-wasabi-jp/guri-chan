@@ -2,21 +2,40 @@ import os
 import uuid
 import json
 import base64
-from datetime import datetime
 import boto3
+from datetime import datetime
 
 from flask import Flask, request, abort, jsonify
 
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, ImageSendMessage
+from linebot.v3 import (
+  WebhookHandler
+)
+from linebot.v3.webhooks import (
+  MessageEvent,
+  TextMessageContent,
+  ImageMessageContent
+)
+
+from linebot.v3.messaging import (
+  Configuration, 
+  ReplyMessageRequest,
+  MessagingApi,
+  ApiException,
+  ImageMessage,
+  ApiClient
+)
+from linebot.v3.exceptions import (
+  InvalidSignatureError
+)
 
 app = Flask(__name__)
 
 CHANNEL_ACCESS_TOKEN = os.environ['CHANNEL_ACCESS_TOKEN']
 CHANNEL_SECRET = os.environ['CHANNEL_SECRET']
 
-line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
+configuration = Configuration(
+    access_token=CHANNEL_ACCESS_TOKEN
+)
 handler = WebhookHandler(CHANNEL_SECRET)
 
 endpointUrlS3 = os.getenv('S3_ENDPOINT_URL', default=None)
@@ -50,11 +69,15 @@ def status():
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
 
-    app.logger.info(f'Request body: {body}')
+    app.logger.info(f'### Request body: {body}')
 
     try:
         handler.handle(body, signature)
-    except InvalidSignatureError:
+    except ApiException as e:
+        app.logger.warn(f'### error {e}')
+        abort(400)
+    except InvalidSignatureError as e:
+        app.logger.warn(f'### error {e}')
         abort(400)
 
     return 'OK'
@@ -62,26 +85,41 @@ def status():
 """
 Line API ハンドラ
 """
-@handler.add(MessageEvent, message=TextMessage)
+@handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     # DynamoDB から最新のCDNに保存されたイメージURLを取得する。
-    response = dynamodb.get_item({
-        'TableName': 'APP_PROPS',
-        'Key': {
-            'app_name': {'S': 'guri-chan'},
-        },
-    })
-    last_updated_at: string = response['Item']['props']['last_uploaded_at']
-    latest_image_index_url: string = response['Item']['props']['latest_image_index_url']
-    latest_image_url: string = response['Item']['props']['latest_image_url']
-
-    line_bot_api.reply_message(
-        event.reply_token,
-        ImageSendMessage(
-            preview_image_url=latest_image_index_url,
-            original_content_url=latest_image_url,
+    try:
+        response = dynamodb.get_item(
+            TableName='APP_PROPS',
+            Key={
+                'app_name': {'S': 'guri-chan'},
+            },
         )
-    )
+    except Exception as e:
+        app.logger.error(f'### error {e}')
+        abort(400)
+
+    last_updated_at: string = response['Item']['props']['M']['last_uploaded_at']['S']
+    latest_image_index_url: string = response['Item']['props']['M']['latest_image_index_url']['S']
+    latest_image_url: string = response['Item']['props']['M']['latest_image_url']['S']
+
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        try:
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[
+                        ImageMessage(
+                            original_content_url=latest_image_url,
+                            preview_image_url=latest_image_index_url
+                        )
+                    ]
+                )
+            )
+        except Exception as e:
+            app.logger.error(f'### error = {e}')
+            abort(400)
 
 
 """
@@ -92,17 +130,17 @@ def upload():
 
     # シグネチャがヘッダーにセットされていてかつ正しい事
     if 'X-Gurichan-Signature' not in request.headers:
-        return {
+        return jsonify({
             'status': 'NG',
             'message': 'Header X-Gurichan-Signature is requred',
-        }, 403
+        }), 403
 
     signature = request.headers['X-Gurichan-Signature']
     if signature != os.getenv('UPLOAD_SIGNATURE', None):
-        return {
+        return jsonify({
             'status': 'NG',
             'message': 'invalid signature',
-        }, 403
+        }), 403
 
     body = request.data.decode('utf-8')
     body = json.loads(body)
